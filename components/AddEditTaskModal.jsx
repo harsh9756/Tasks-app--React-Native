@@ -1,0 +1,299 @@
+import { useEffect, useState } from 'react';
+import {
+  Modal, View, Text, TextInput,
+  Pressable, StyleSheet, ScrollView,
+} from 'react-native';
+import DateTimePickerModal from 'react-native-modal-datetime-picker';
+import { C, S, R } from '../theme';
+
+const DAYS = [
+  { key: 'Mon' }, { key: 'Tue' }, { key: 'Wed' }, { key: 'Thu' },
+  { key: 'Fri' }, { key: 'Sat' }, { key: 'Sun' },
+];
+
+// fromHome = true  → hide repeat-days section, CTA says "Add to Today"
+// fromHome = false → show repeat-days section (default, used in Timetable)
+export default function AddEditTaskModal({
+  visible, onClose, onAdd, onSave, editingTask, defaultDate, fromHome = false,
+}) {
+  const [title,         setTitle]         = useState('');
+  const [time,          setTime]          = useState('09:00');
+  const [period,        setPeriod]        = useState('AM');
+  const [duration,      setDuration]      = useState('60');
+  const [repeatDays,    setRepeatDays]    = useState([]);
+  const [pickerVisible, setPickerVisible] = useState(false);
+  const [submitted,     setSubmitted]     = useState(false);
+
+  useEffect(() => {
+    if (!visible) { setSubmitted(false); return; }
+    if (editingTask) {
+      setTitle(editingTask.title || '');
+      const parts = (editingTask.time || '09:00 AM').split(' ');
+      setTime(parts[0]);
+      setPeriod(parts[1] || 'AM');
+      setDuration(String(editingTask.durationMinutes || 60));
+      setRepeatDays(editingTask.repeatDays || []);
+    } else {
+      setTitle(''); setTime('09:00'); setPeriod('AM');
+      setDuration('60'); setRepeatDays([]);
+    }
+  }, [visible, editingTask]);
+
+  const toggleDay = (key) =>
+    setRepeatDays((p) => p.includes(key) ? p.filter((d) => d !== key) : [...p, key]);
+
+  const toggleAll = () =>
+    setRepeatDays(repeatDays.length === 7 ? [] : DAYS.map((d) => d.key));
+
+  const submit = () => {
+    setSubmitted(true);
+    if (!title.trim()) return;
+    const parsed = parseInt(duration, 10);
+    const payload = {
+      title:           title.trim(),
+      time:            `${time} ${period}`,
+      durationMinutes: Number.isFinite(parsed) && parsed > 0 ? parsed : 60,
+      repeatDays:      fromHome ? [] : repeatDays, // no repeat when adding from Home
+    };
+    if (defaultDate) payload.date = defaultDate;
+    if (editingTask) { payload.id = editingTask.id; onSave(payload); }
+    else onAdd(payload);
+    onClose();
+  };
+
+  const isTitleError = submitted && !title.trim();
+
+  // Heading and CTA label change based on context
+  const heading  = editingTask ? '✏️  Edit Task'
+                 : fromHome    ? '＋  Add to Today'
+                 :               '＋  New Task';
+  const saveLabel = editingTask ? 'Save Changes'
+                  : fromHome    ? 'Add to Today'
+                  :               'Add Task';
+
+  return (
+    <Modal visible={visible} transparent animationType="slide">
+      <Pressable style={styles.backdrop} onPress={onClose}>
+        {/* Stop press propagation so tapping inside sheet doesn't close */}
+        <Pressable style={styles.sheet} onPress={() => {}}>
+          <View style={styles.handle} />
+
+          <Text style={styles.heading}>{heading}</Text>
+
+          {/* "Today only" notice when opened from Home */}
+          {fromHome && !editingTask && (
+            <View style={styles.noticeBanner}>
+              <Text style={styles.noticeText}>
+                📅  This task will only appear on today's schedule
+              </Text>
+            </View>
+          )}
+
+          <ScrollView showsVerticalScrollIndicator={false}>
+            {/* Title */}
+            <Text style={styles.label}>Task Name</Text>
+            <TextInput
+              value={title}
+              onChangeText={setTitle}
+              style={[styles.input, isTitleError && styles.inputError]}
+              placeholder="e.g. Morning Run"
+              placeholderTextColor={C.textHint}
+              returnKeyType="done"
+              autoFocus={visible}
+            />
+            {isTitleError && (
+              <Text style={styles.errorMsg}>Please enter a task name</Text>
+            )}
+
+            {/* Time + Duration row */}
+            <View style={styles.row}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Time</Text>
+                <Pressable
+                  style={styles.inputRow}
+                  onPress={() => setPickerVisible(true)}
+                >
+                  <Text style={styles.inputRowText}>🕐  {time} {period}</Text>
+                  <Text style={styles.inputRowChevron}>›</Text>
+                </Pressable>
+              </View>
+              <View style={{ width: 110 }}>
+                <Text style={styles.label}>Duration (min)</Text>
+                <TextInput
+                  value={duration}
+                  onChangeText={(v) => { if (/^\d*$/.test(v)) setDuration(v); }}
+                  keyboardType="numeric"
+                  style={styles.input}
+                  placeholder="60"
+                  placeholderTextColor={C.textHint}
+                />
+              </View>
+            </View>
+
+            <DateTimePickerModal
+              isVisible={pickerVisible}
+              mode="time"
+              onConfirm={(d) => {
+                const H = d.getHours(), M = d.getMinutes();
+                const p  = H >= 12 ? 'PM' : 'AM';
+                const hh = H % 12 === 0 ? 12 : H % 12;
+                setTime(`${String(hh).padStart(2, '0')}:${String(M).padStart(2, '0')}`);
+                setPeriod(p);
+                setPickerVisible(false);
+              }}
+              onCancel={() => setPickerVisible(false)}
+            />
+
+            {/* Repeat days — hidden when opened from Home */}
+            {!fromHome && (
+              <>
+                <View style={styles.repeatHeader}>
+                  <Text style={styles.label}>Repeat</Text>
+                  <Pressable onPress={toggleAll}>
+                    <Text style={styles.toggleAll}>
+                      {repeatDays.length === 7 ? 'Clear all' : 'Every day'}
+                    </Text>
+                  </Pressable>
+                </View>
+                <View style={styles.daysRow}>
+                  {DAYS.map((d) => {
+                    const active = repeatDays.includes(d.key);
+                    const isSun  = d.key === 'Sun';
+                    return (
+                      <Pressable
+                        key={d.key}
+                        onPress={() => toggleDay(d.key)}
+                        style={[
+                          styles.dayBtn,
+                          active && styles.dayBtnActive,
+                          isSun && !active && styles.dayBtnSun,
+                        ]}
+                      >
+                        <Text style={[
+                          styles.dayBtnLabel,
+                          active && styles.dayBtnLabelActive,
+                          isSun && !active && styles.dayBtnLabelSun,
+                        ]}>
+                          {d.key}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </>
+            )}
+          </ScrollView>
+
+          {/* Footer */}
+          <View style={styles.footer}>
+            <Pressable
+              onPress={onClose}
+              style={({ pressed }) => [styles.footerBtn, styles.cancelBtn, pressed && { opacity: 0.7 }]}
+            >
+              <Text style={styles.cancelText}>Cancel</Text>
+            </Pressable>
+            <Pressable
+              onPress={submit}
+              style={({ pressed }) => [styles.footerBtn, styles.saveBtn, pressed && { opacity: 0.85 }]}
+            >
+              <Text style={styles.saveText}>{saveLabel}</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+const styles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15,23,42,0.5)',
+    justifyContent: 'flex-end',
+  },
+  sheet: {
+    backgroundColor: C.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: S.xl,
+    paddingTop: S.sm,
+    paddingBottom: S.xxl,
+    maxHeight: '92%',
+  },
+  handle: {
+    width: 36, height: 4,
+    backgroundColor: C.border2,
+    borderRadius: R.full,
+    alignSelf: 'center',
+    marginBottom: S.lg,
+  },
+  heading: {
+    fontSize: 20, fontWeight: '800',
+    color: C.text, letterSpacing: -0.4,
+    marginBottom: S.sm,
+  },
+  noticeBanner: {
+    backgroundColor: C.primaryLight,
+    borderRadius: R.sm,
+    paddingHorizontal: S.md,
+    paddingVertical: S.sm,
+    marginBottom: S.sm,
+    borderLeftWidth: 3,
+    borderLeftColor: C.primary,
+  },
+  noticeText: {
+    fontSize: 12, fontWeight: '600',
+    color: C.primary, lineHeight: 18,
+  },
+  label: {
+    fontSize: 12, fontWeight: '700',
+    color: C.textSub, letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    marginBottom: S.xs, marginTop: S.md,
+  },
+  input: {
+    backgroundColor: C.bg,
+    borderRadius: R.md,
+    paddingHorizontal: S.md, paddingVertical: 11,
+    fontSize: 15, color: C.text,
+    borderWidth: 1.5, borderColor: 'transparent',
+  },
+  inputError: { borderColor: C.red, backgroundColor: C.redBg },
+  errorMsg:   { fontSize: 12, color: C.red, marginTop: 4, fontWeight: '500' },
+  row:        { flexDirection: 'row', gap: S.md },
+  inputRow: {
+    backgroundColor: C.bg, borderRadius: R.md,
+    paddingHorizontal: S.md, paddingVertical: 11,
+    flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  inputRowText:    { fontSize: 15, color: C.text },
+  inputRowChevron: { fontSize: 20, color: C.textHint, fontWeight: '300' },
+  repeatHeader: {
+    flexDirection: 'row', justifyContent: 'space-between',
+    alignItems: 'center', marginTop: S.md, marginBottom: S.xs,
+  },
+  toggleAll: { fontSize: 13, fontWeight: '600', color: C.primary },
+  daysRow:   { flexDirection: 'row', gap: S.xs, marginTop: S.sm },
+  dayBtn: {
+    flex: 1, paddingVertical: S.sm, borderRadius: R.sm,
+    backgroundColor: C.bg, alignItems: 'center',
+  },
+  dayBtnActive:      { backgroundColor: C.primary },
+  dayBtnSun:         { backgroundColor: '#fff5f5' },
+  dayBtnLabel:       { fontSize: 11, fontWeight: '700', color: C.textSub },
+  dayBtnLabelActive: { color: '#fff' },
+  dayBtnLabelSun:    { color: C.red },
+  footer: { flexDirection: 'row', gap: S.md, marginTop: S.xl },
+  footerBtn: {
+    flex: 1, paddingVertical: S.md,
+    borderRadius: R.md, alignItems: 'center',
+  },
+  cancelBtn: {
+    backgroundColor: C.bg,
+    borderWidth: 1, borderColor: C.border2,
+  },
+  saveBtn:    { backgroundColor: C.primary },
+  cancelText: { fontSize: 15, fontWeight: '600', color: C.textSub },
+  saveText:   { fontSize: 15, fontWeight: '700', color: '#fff' },
+});
