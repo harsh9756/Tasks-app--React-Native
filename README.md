@@ -30,15 +30,6 @@ A clean, fast React Native scheduling app built with Expo. Build a weekly routin
 
 ---
 
-## 🖼️ Screenshots
-
-> *(Add screenshots here after building)*
-
-| Home | Timetable | Focus | Calendar |
-|------|-----------|-------|----------|
-| ![Home](./screenshots/home.png) | ![Timetable](./screenshots/timetable.png) | ![Focus](./screenshots/focus.png) | ![Calendar](./screenshots/calendar.png) |
-
----
 
 ## 🛠️ Tech Stack
 
@@ -150,7 +141,7 @@ All data is stored locally using AsyncStorage — no server, no account, no inte
 
 ## 👩‍💻 Developer
 
-**Anudita Singh** — Creator & Developer
+**Harsh Upadhyay** — Creator & Developer
 
 ---
 
